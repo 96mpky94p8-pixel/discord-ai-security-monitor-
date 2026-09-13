@@ -38,11 +38,8 @@ This framework provides real-time intent analysis, kill-switch verification, and
    * `AUDIT_CHANNEL_ID`: Channel ID for audit logs
 3. Run the bot:
    ```bash
-   ⁠# Geminiフル機能版を動かす場合
-python buddy_gemini.py
-
-# または、シンプル版を動かす場合
-python framework_simple.py
+   ⁠# Geminiフル機能版を動かす場合　python buddy_gemini.py
+   # または、シンプル版を動かす場合　python framework_simple.py
 
 
    ### 好きな方を選んで使ってね！🛡️✨
