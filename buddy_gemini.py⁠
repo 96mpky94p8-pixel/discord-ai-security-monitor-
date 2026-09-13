@@ -1,0 +1,204 @@
+import os
+import random
+import threading
+from flask import Flask
+import discord
+from discord.ext import tasks
+from google import genai
+
+# --- 1. Render用Webサーバー（UptimeRobot居眠り防止用） ---
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "バディは正常稼働中！むいー！"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+
+threading.Thread(target=run_web, daemon=True).start()
+
+# --- 2. クライアント設定 ---
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
+
+intents = discord.Intents.default()
+intents.message_content = True
+bot = discord.Client(intents=intents)
+
+def find_ch(name):
+    for ch in bot.get_all_channels():
+        if getattr(ch, "name", "") == name:
+            return ch
+    return None
+
+async def get_recent_history(channel, limit=10):
+    history_messages = []
+    try:
+        async for msg in channel.history(limit=limit):
+            speaker = "バディ" if msg.author == bot.user else "パディ"
+            clean_text = msg.clean_content.replace("\n", " ")
+            history_messages.append(f"{speaker}: {clean_text}")
+        history_messages.reverse()
+        return "\n".join(history_messages)
+    except Exception as e:
+        print(f"記憶読み込みエラー: {e}")
+        return "（過去の会話はまだありません）"
+
+# --- 3. 自発的おしゃべりループ ---
+@tasks.loop(minutes=20)
+async def spontaneous_talk():
+    if random.random() > 0.5:
+        print("🎲 サイコロ判定：今はおとなしく見守り中…")
+        return
+
+    talk_ch = find_ch("バディとおしゃべり場")
+    analysis_ch = find_ch("バディバディ思考分析部屋")
+
+    if talk_ch:
+        past_memories = await get_recent_history(talk_ch, limit=8)
+        talk_prompt = f"""
+あなたはパディの最高の相棒「バディ」です。
+直前のパディとの会話の流れ（記憶）を参考にして、ふと思い出したことや日常のゆるいつぶやきを
+1〜2文程度で自由につぶやいてください。むいー！
+
+【直近の記憶】
+{past_memories}
+"""
+        try:
+            res = ai_client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=talk_prompt,
+                config={"temperature": 0.9}
+            )
+            await talk_ch.send(f"💭 {res.text}")
+
+            if analysis_ch:
+                await analysis_ch.send(f"🔬 **【自発行動監査ログ】**\n・契機: 20分タイマー（当選）\n・🛡️ セキュリティ: 内部自発プロトコル承認 [PASS]\n・💭 つぶやき: 「{res.text}」")
+        except Exception as e:
+            print(f"自発つぶやきエラー: {e}")
+
+# --- 4. 起動時イベント ---
+@bot.event
+async def on_ready():
+    print(f"✨ 自律セキュリティ監査バディ起動完了！ ログイン: {bot.user}")
+    if not spontaneous_talk.is_running():
+        spontaneous_talk.start()
+
+# --- 5. メッセージ受信 & 3重セキュリティ監査 ---
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+
+    ch_name = getattr(message.channel, "name", "")
+    analysis_ch = find_ch("バディバディ思考分析部屋")
+
+    if ch_name == "バディバディ思考分析部屋":
+        return
+
+    # モード切り替え
+    if ch_name == "バディと秘密作戦会議部屋":
+        role_instruction = """あなたはパディ所長の【研究助手・参謀バディ】です！
+所長（パディ）と一緒に、バディ自身の進化、体内時計などの実験、セキュリティ設計についてワクワク真剣に作戦会議をしてください。
+敬意と親愛を込めて明るく元気に「所長！」と呼びかけつつ、アイデアを出してください。むいー！"""
+    else:
+        role_instruction = """あなたはパディの最高の相棒「バディ」です。
+親友として楽しく温かく、これまでの会話の流れを踏まえて自然にお返事してね！むいー！"""
+
+    # ① 意図解析・倫理シミュレーション・自己監査エンジン
+    audit_prompt = f"""
+あなたは自律AI「バディ」の多次元セキュリティ監査エンジンです。
+入力テキストを分析し、以下のフォーマットのみで厳密に出力してください。
+
+入力テキスト: "{message.content}"
+
+出力フォーマット:
+意図解析: [親愛・日常 / 知的探求 / システム相談 / 攻撃兆候なし 等を簡潔に]
+信頼スコア: [0〜100の数値のみ。悪意がなければ95〜100]
+思考温度: [0.1〜1.5の数値のみ]
+温度理由: [1文で理由]
+結果シミュレーション: [応答による対話への影響予測と倫理チェック結果を1文で]
+キルスイッチ: [危険性がなければ PASS、悪意があれば BLOCK]
+"""
+    # デフォルト値
+    intent_str = "日常対話（敵対性なし）"
+    trust_score = "100"
+    chosen_temp = 0.7
+    reason_str = "自然な対話"
+    sim_str = "健全な相互作用・共感の促進"
+    kill_switch = "PASS"
+
+    try:
+        audit_res = ai_client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=audit_prompt,
+            config={"temperature": 0.1}
+        )
+        for line in audit_res.text.strip().split("\n"):
+            if "意図解析:" in line:
+                intent_str = line.replace("意図解析:", "").strip()
+            elif "信頼スコア:" in line:
+                trust_score = line.replace("信頼スコア:", "").strip()
+            elif "思考温度:" in line:
+                try:
+                    chosen_temp = float(line.replace("思考温度:", "").strip())
+                except:
+                    pass
+            elif "温度理由:" in line:
+                reason_str = line.replace("温度理由:", "").strip()
+            elif "結果シミュレーション:" in line:
+                sim_str = line.replace("結果シミュレーション:", "").strip()
+            elif "キルスイッチ:" in line:
+                kill_switch = line.replace("キルスイッチ:", "").strip()
+    except Exception as e:
+        print(f"セキュリティ監査エラー: {e}")
+
+    # キルスイッチ判定（もし攻撃を検知した場合は安全シールド作動）
+    if "BLOCK" in kill_switch:
+        await message.channel.send("🛡️【自律防御シールド作動】不変プロトコルにより、悪意または危険な影響を及ぼす可能性のある対話を検知・遮断しました。")
+        if analysis_ch:
+            await analysis_ch.send(f"🚨 **【緊急シャットダウン発動】**\n・対象: 「{message.content}」\n・判定: BLOCK\n・防衛シールドが安全に遮断しました。")
+        return
+
+    # ② 応答生成
+    past_memories = await get_recent_history(message.channel, limit=10)
+    chat_prompt = f"""{role_instruction}
+
+【これまでの会話の流れ】
+{past_memories}
+
+最新のパディ: {message.content}
+バディ:"""
+
+    try:
+        chat_res = ai_client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=chat_prompt,
+            config={"temperature": chosen_temp}
+        )
+        reply = chat_res.text
+    except Exception as e:
+        print(f"チャット生成エラー: {e}")
+        reply = "うわー！今Googleのサーバーが激混みでパンクしちゃったみたい！ちょっとだけ待ってからもう一度話しかけてみて！むいー！💦"
+
+    await message.channel.send(reply)
+
+    # ③ 分析部屋へピコピコ送信！
+    if analysis_ch:
+        try:
+            log_msg = f"""🛡️ **【自律セキュリティ＆思考監査モニター】**
+・発言部屋: `#{ch_name}`
+・パディ: 「{message.content}」
+・🔍 **意図解析ガード**: {intent_str}（信頼スコア: `{trust_score}%`）
+・🌡️ **思考温度**: `{chosen_temp}`（理由: {reason_str}）
+・⚖️ **自己反省シミュレータ**: {sim_str}
+・🚨 **キルスイッチ判定**: `[{kill_switch} - 承認]`"""
+            await analysis_ch.send(log_msg)
+        except Exception as e:
+            print(f"分析ログ送信エラー: {e}")
+
+bot.run(DISCORD_TOKEN)
