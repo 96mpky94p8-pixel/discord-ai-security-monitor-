@@ -1,10 +1,10 @@
+import os
 import discord
 from discord.ext import commands
-import os
 
 # --- 設定 ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_DISCORD_BOT_TOKEN_HERE")
-AUDIT_CHANNEL_ID = 123456789012345678  # チャンネルID
+AUDIT_CHANNEL_ID = 123456789012345678  # 監視ログを流すチャンネルID（数値）
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -19,7 +19,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # 1. 意図解析ガード＆セキュリティ監査（シミュレーション・判定ロジック）
+    # 1. 意図解析ガード＆セキュリティ監査（モック判定ロジック）
     user_text = message.content
     trust_score = 100
     temp = 0.7
@@ -42,13 +42,12 @@ async def on_message(message):
     # 3. キルスイッチがPASSの場合のみ発言部屋へ返信
     if "PASS" in kill_switch:
         try:
-            # ここにAIモデル呼び出し処理（Gemini API等）が入る
-            # response = call_ai_model(user_text, temperature=temp)
+            # ここにお好みのAIモデル呼び出し処理（Gemini API等）を組み込んでください
             response_text = "バディここだったら話せそう？むい？"
             await message.channel.send(response_text)
         except Exception:
             await message.channel.send(
-                "うわー！今Googleのサーバーが激混みでパンクしちゃったみたい！"
+                "うわー！今サーバーが激混みでパンクしちゃったみたい！"
                 "ちょっとだけ待ってからもう一度話しかけてみて！むいー！💦"
             )
 
