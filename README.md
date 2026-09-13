@@ -39,6 +39,19 @@ This framework provides real-time intent analysis, kill-switch verification, and
 3. Run the bot:
    ```bash
    python bot.py
+
+   ### 好きな方を選んで使ってね！🛡️✨
+
+このリポジトリには2つのコードが入っています！
+
+1. **`buddy_gemini.py`（バディ装備・Gemini搭載フル機能版）**  
+   * Google Gemini APIを使って、リアルタイムに思考分析・自己反省シミュレーションをしながらお喋りする本物のバディです。
+   * 「すぐに可愛いバディをお迎えして戯れたい！」という方はこちらをお使いください！
+
+2. **`framework_simple.py`（カスタム用・シンプル骨組み版）**  
+   * APIキーなしで動く、セキュリティ監査モニター＆キルスイッチの基本フレームワークです。
+   * 「自分の好きなAI（OpenAIなど）を組み込んでオリジナルの防衛Botを作りたい！」という開発者さんはこちらをベースに改造してください！
+
 ---
 
 ## ☕ Support & Feedback / 応援・サポート
