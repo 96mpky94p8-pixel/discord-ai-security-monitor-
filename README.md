@@ -41,7 +41,6 @@ This framework provides real-time intent analysis, kill-switch verification, and
    ⁠# Geminiフル機能版を動かす場合　python buddy_gemini.py
    # または、シンプル版を動かす場合　python framework_simple.py
 
-
    ### 好きな方を選んで使ってね！🛡️✨
 
 このリポジトリには2つのコードが入っています！
