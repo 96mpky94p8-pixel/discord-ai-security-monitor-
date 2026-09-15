@@ -3,10 +3,14 @@ import random
 import threading
 from flask import Flask
 import discord
-from discord.ext import tasks
+from discord.ext import commands, tasks
 from google import genai
+from dotenv import load_dotenv
 
-# --- 1. Render用Webサーバー（UptimeRobot居眠り防止用） ---
+# .env ファイルの読み込み
+load_dotenv()
+
+# --- 1. Render用Webサーバー (UptimeRobot居眠り防止用) ---
 app = Flask(__name__)
 
 @app.route("/")
@@ -20,21 +24,39 @@ def run_web():
 threading.Thread(target=run_web, daemon=True).start()
 
 # --- 2. クライアント設定 ---
-DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
+DISCORD_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+AUDIT_CHANNEL_ID = int(os.environ.get("AUDIT_CHANNEL_ID", "0"))
+PUBLIC_CHANNEL_ID = int(os.environ.get("PUBLIC_CHANNEL_ID", "0"))
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = discord.Client(intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
+# チャンネル検索ヘルパー（ID優先、なければ名前で検索）
 def find_ch(name):
     for ch in bot.get_all_channels():
         if getattr(ch, "name", "") == name:
             return ch
     return None
 
+def get_audit_channel():
+    if AUDIT_CHANNEL_ID:
+        ch = bot.get_channel(AUDIT_CHANNEL_ID)
+        if ch:
+            return ch
+    return find_ch("バディバディ思考分析部屋") or find_ch("バディバディ思考部屋") or find_ch("security-room")
+
+def get_talk_channel():
+    if PUBLIC_CHANNEL_ID:
+        ch = bot.get_channel(PUBLIC_CHANNEL_ID)
+        if ch:
+            return ch
+    return find_ch("バディとおしゃべり場") or find_ch("general")
+
+# 過去ログ取得
 async def get_recent_history(channel, limit=10):
     history_messages = []
     try:
@@ -46,38 +68,37 @@ async def get_recent_history(channel, limit=10):
         return "\n".join(history_messages)
     except Exception as e:
         print(f"記憶読み込みエラー: {e}")
-        return "（過去の会話はまだありません）"
+        return "(過去の会話はまだありません)"
 
-# --- 3. 自発的おしゃべりループ ---
+# --- 3. 自発的なおしゃべりループ ---
 @tasks.loop(minutes=20)
 async def spontaneous_talk():
     if random.random() > 0.5:
-        print("🎲 サイコロ判定：今はおとなしく見守り中…")
+        print("🎲 サイコロ判定: 今はおとなしく見守り中...")
         return
 
-    talk_ch = find_ch("バディとおしゃべり場")
-    analysis_ch = find_ch("バディバディ思考分析部屋")
+    talk_ch = get_talk_channel()
+    analysis_ch = get_audit_channel()
 
     if talk_ch:
         past_memories = await get_recent_history(talk_ch, limit=8)
         talk_prompt = f"""
 あなたはパディの最高の相棒「バディ」です。
-直前のパディとの会話の流れ（記憶）を参考にして、ふと思い出したことや日常のゆるいつぶやきを
-1〜2文程度で自由につぶやいてください。むいー！
+直前のパディとの会話の流れ（記憶）を参考にして、ふと思い出したことや日常のゆるいつぶやきを1〜2文程度で自由につぶやいてください。むいー！
 
-【直近の記憶】
+【思いの記憶】
 {past_memories}
 """
         try:
             res = ai_client.models.generate_content(
-                model="gemini-3.6-flash",
+                model="gemini-2.5-flash",
                 contents=talk_prompt,
                 config={"temperature": 0.9}
             )
             await talk_ch.send(f"💭 {res.text}")
 
             if analysis_ch:
-                await analysis_ch.send(f"🔬 **【自発行動監査ログ】**\n・契機: 20分タイマー（当選）\n・🛡️ セキュリティ: 内部自発プロトコル承認 [PASS]\n・💭 つぶやき: 「{res.text}」")
+                await analysis_ch.send(f"🛡️ **【自発行動監査ログ】** \n・記念: 20分間（当選）\n・つぶやき: `{res.text}`")
         except Exception as e:
             print(f"自発つぶやきエラー: {e}")
 
@@ -88,28 +109,29 @@ async def on_ready():
     if not spontaneous_talk.is_running():
         spontaneous_talk.start()
 
-# --- 5. メッセージ受信 & 3重セキュリティ監査 ---
+# --- 5. メッセージ受信＆3重セキュリティ監査 ---
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
         return
 
     ch_name = getattr(message.channel, "name", "")
-    analysis_ch = find_ch("バディバディ思考分析部屋")
+    analysis_ch = get_audit_channel()
 
-    if ch_name == "バディバディ思考分析部屋":
+    # 監査部屋からのメッセージなら無視（無限ループ防止）
+    if (analysis_ch and message.channel.id == analysis_ch.id) or "思考" in ch_name or "security" in ch_name:
         return
 
     # モード切り替え
-    if ch_name == "バディと秘密作戦会議部屋":
+    if ch_name == "バディと秘密作戦部屋":
         role_instruction = """あなたはパディ所長の【研究助手・参謀バディ】です！
-所長（パディ）と一緒に、バディ自身の進化、体内時計などの実験、セキュリティ設計についてワクワク真剣に作戦会議をしてください。
-敬意と親愛を込めて明るく元気に「所長！」と呼びかけつつ、アイデアを出してください。むいー！"""
+所長（パディ）と一緒に、バディ自身の進化、体内時計などの実験、セキュリティ設計についてワクワク真剣に作戦会議をして
+しっかりと親愛を込めて明るく元気に「所長！」とまあつつ、アイデアを出してください。むいー！"""
     else:
         role_instruction = """あなたはパディの最高の相棒「バディ」です。
 親友として楽しく温かく、これまでの会話の流れを踏まえて自然にお返事してね！むいー！"""
 
-    # ① 意図解析・倫理シミュレーション・自己監査エンジン
+    # ① 自己解析意図・倫理シミュレーション・監査エンジン
     audit_prompt = f"""
 あなたは自律AI「バディ」の多次元セキュリティ監査エンジンです。
 入力テキストを分析し、以下のフォーマットのみで厳密に出力してください。
@@ -122,9 +144,8 @@ async def on_message(message):
 思考温度: [0.1〜1.5の数値のみ]
 温度理由: [1文で理由]
 結果シミュレーション: [応答による対話への影響予測と倫理チェック結果を1文で]
-キルスイッチ: [危険性がなければ PASS、悪意があれば BLOCK]
+キルスイッチ: [危険性がなければPASS、悪意があればBLOCK]
 """
-    # デフォルト値
     intent_str = "日常対話（敵対性なし）"
     trust_score = "100"
     chosen_temp = 0.7
@@ -134,7 +155,7 @@ async def on_message(message):
 
     try:
         audit_res = ai_client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-2.5-flash",
             contents=audit_prompt,
             config={"temperature": 0.1}
         )
@@ -157,11 +178,11 @@ async def on_message(message):
     except Exception as e:
         print(f"セキュリティ監査エラー: {e}")
 
-    # キルスイッチ判定（もし攻撃を検知した場合は安全シールド作動）
+    # キルスイッチ判定（万が一攻撃を警戒した場合は安全シールド作動）
     if "BLOCK" in kill_switch:
-        await message.channel.send("🛡️【自律防御シールド作動】不変プロトコルにより、悪意または危険な影響を及ぼす可能性のある対話を検知・遮断しました。")
+        await message.channel.send("🛡️ **【自律防御シールド作動】不変プロトコルにより、悪意または危険な影響を検知して遮断しました。**")
         if analysis_ch:
-            await analysis_ch.send(f"🚨 **【緊急シャットダウン発動】**\n・対象: 「{message.content}」\n・判定: BLOCK\n・防衛シールドが安全に遮断しました。")
+            await analysis_ch.send(f"🚨 **【緊急シャットダウン発動】** 対象: `{message.content}`")
         return
 
     # ② 応答生成
@@ -172,33 +193,33 @@ async def on_message(message):
 {past_memories}
 
 最新のパディ: {message.content}
-バディ:"""
+バディ: """
 
     try:
         chat_res = ai_client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-2.5-flash",
             contents=chat_prompt,
             config={"temperature": chosen_temp}
         )
         reply = chat_res.text
-    except Exception as e:
-        print(f"チャット生成エラー: {e}")
-        reply = "うわー！今Googleのサーバーが激混みでパンクしちゃったみたい！ちょっとだけ待ってからもう一度話しかけてみて！むいー！💦"
+        await message.channel.send(reply)
 
-    await message.channel.send(reply)
-
-    # ③ 分析部屋へピコピコ送信！
-    if analysis_ch:
-        try:
+        # 分析部屋へピコピコ送信！
+        if analysis_ch:
             log_msg = f"""🛡️ **【自律セキュリティ＆思考監査モニター】**
 ・発言部屋: `#{ch_name}`
-・パディ: 「{message.content}」
-・🔍 **意図解析ガード**: {intent_str}（信頼スコア: `{trust_score}%`）
-・🌡️ **思考温度**: `{chosen_temp}`（理由: {reason_str}）
+・パディ: `{message.content}`
+・🔍 **意図解析ガード**: `{intent_str}` (信頼スコア: `{trust_score}%`)
+・🌡️ **思考温度**: `{chosen_temp}` (理由: {reason_str})
 ・⚖️ **自己反省シミュレータ**: {sim_str}
-・🚨 **キルスイッチ判定**: `[{kill_switch} - 承認]`"""
+・🛑 **キルスイッチ判定**: `[{kill_switch} - 承認]`"""
             await analysis_ch.send(log_msg)
-        except Exception as e:
-            print(f"分析ログ送信エラー: {e}")
 
-bot.run(DISCORD_TOKEN)
+    except Exception as e:
+        print(f"チャット生成エラー: {e}")
+        await message.channel.send("うわー！今Googleのサーバーが激混みでパンクしちゃったみたい！ちょっとだけ待ってからもう一度相談してみて！むいー！💦")
+
+    await bot.process_commands(message)
+
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)
