@@ -58,3 +58,4 @@ This framework provides real-time intent analysis, kill-switch verification, and
 ## ☕ Support & Feedback / 応援・サポート
 If you like this project, feel free to give it a ⭐ on GitHub!  
 このプロジェクトが気に入ったら、ぜひ画面右上の **「Star（⭐）」** を押して応援してもらえると励みになります！
+https://ofuse.me/b8699cbc
