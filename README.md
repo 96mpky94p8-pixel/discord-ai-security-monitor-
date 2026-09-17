@@ -55,7 +55,8 @@ This framework provides real-time intent analysis, kill-switch verification, and
 
 ---
 
-## ☕ Support & Feedback / 応援・サポート
-If you like this project, feel free to give it a ⭐ on GitHub!  
-このプロジェクトが気に入ったら、ぜひ画面右上の **「Star（⭐）」** を押して応援してもらえると励みになります！
-https://ofuse.me/b8699cbc
+## ☕ Support & Sponsorship
+
+If you find this dual-channel architecture useful for your own Discord communities, consider supporting continued development!
+
+[![OFUSE](https://img.shields.io/badge/Support_on-OFUSE-orange?style=for-the-badge&logo=coffeescript&logoColor=white)](https://ofuse.me/b8699cbc)
